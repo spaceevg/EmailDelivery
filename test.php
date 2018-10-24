@@ -9,7 +9,14 @@ final class EmailDelivery
     private static $report = '';
     private static $user = '';
     private static $text = '';
-    private static $params = [];
+    private static $params = [
+        'domain' => '',
+        'age' => 18,
+        'time' => [
+            'from' => 10,
+            'to' => 10
+        ]
+    ];
     private static $message = <<<MESSAGE
 "<h1>{name}</h1>"
 
@@ -21,11 +28,13 @@ final class EmailDelivery
 {from}
 </p>
 MESSAGE;
+    private static $template = '';
+    private static $valid = [];
 
     /**
      * getState
      *
-     * @return void
+     * @return array
      */
     public static function getState()
     {
@@ -36,7 +45,20 @@ MESSAGE;
         $state['user'] = self::$user;
         $state['text'] = self::$text;
         $state['params'] = self::$params;
+        $state['template'] = self::$template;
         return $state;
+    }
+
+    /**
+     * setTemplate
+     *
+     * @param  mixed $template
+     *
+     * @return void
+     */
+    public static function setTemplate($template)
+    {
+        self::$template = $template;
     }
 
     /**
@@ -50,13 +72,20 @@ MESSAGE;
      *
      * @return void
      */
-    public static function addState(string $user = '', string $text = '', array $emails = [], string $reportEmail = '', array $params = [])
-    {
+    public static function sendEmails(
+        string $user = '',
+        string $text = '',
+        array $emails = [],
+        string $reportEmail = '',
+        array $params = [],
+        string $template = ''
+    ) {
+        $time = date('H', time());
         if (!empty($user)) {
             self::$user = $user;
         }
         if (!empty($text)) {
-            self::$text = \htmlspecialchars($text);
+            self::$text = $text;
         }
         if (count($emails)) {
             \array_merge(self::$emails, $emails);
@@ -66,6 +95,16 @@ MESSAGE;
         }
         if (count($params)) {
             array_merge(self::$params, $params);
+        }
+        if (($time >= self::$params['time']['from']) && ($time < self::$params['time']['to'])) {
+            self::validEmails();
+            usort(self::$valid, function ($a, $b) {
+                return ($a['date_registration'] <=> $b['date_registration']);
+            });
+            foreach (self::$valid as $email) {
+                $result = self::sendEmail($email['name'], $email['email']);
+            }
+            return self::sendReport($result);
         }
     }
 
@@ -121,38 +160,11 @@ MESSAGE;
     }
 
     /**
-     * pushEmails
-     *
-     * @param  mixed $user
-     * @param  mixed $text
-     * @param  mixed $emails
-     * @param  mixed $reportEmail
-     * @param  mixed $params
-     *
-     * @return void
-     */
-    public function pushEmails(string $user, string $text, array $emails, string $reportEmail, array $params = [])
-    {
-        self::$emails = $emails;
-        self::$reportEmail = $reportEmail;
-        self::$user = $user;
-        self::$text = $text;
-        self::$params = $params;
-        if (self::validateEmails()) {
-            foreach (self::$emails as $email) {
-                pushEmail();
-            }
-        } else {
-            self::pushReport();
-        }
-    }
-
-    /**
      * validateEmails
      *
-     * @return void
+     * @return bool
      */
-    private static function validateEmails()
+    private static function validEmails()
     {
         $bool = true;
         foreach (self::$emails as $email) {
@@ -160,27 +172,47 @@ MESSAGE;
             if (!$result) {
                 self::$report .= $email['email'] . PHP_EOL;
                 $bool = false;
+                continue;
             }
+            if ($email['age'] < self::$params['age']) {
+                $bool = false;
+                continue;
+            }
+            if (!empty(self::$params['domain']) && (strpos($email['email'], '@' . self::$params['domain']))) {
+                $bool = false;
+                continue;
+            }
+            self::$valid[] = $email;
         }
         return $bool;
     }
 
     /**
-     * pushReport
+     * sendReport
      *
-     * @return void
+     * @return bool
      */
-    private static function pushReport()
+    private static function sendReport($result)
     {
-
+        $result ? $string = 'successfully' : $string = 'unsuccessfully';
+        self::$report =
+            'Not valid emails:' . PHP_EOL .
+            self::$report . PHP_EOL .
+            'Count emails sent: ' . count(self::$valid) .
+            'Result: ' . $string;
+        if (!empty(self::$reportEmail)) {
+            return mail(self::$reportEmail, 'Report', self::$report, ['From' => self::$user]);
+        } else {
+            return false;
+        }
     }
 
     /**
-     * pushEmail
+     * sendEmail
      *
      * @return void
      */
-    private static function pushEmail()
+    private static function sendEmail($name, $email)
     {
 
     }
